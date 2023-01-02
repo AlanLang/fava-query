@@ -33,14 +33,11 @@ RUN cargo build --target x86_64-unknown-linux-musl --release
 FROM scratch
 # FROM alpine:latest
 
-RUN apk update
-RUN apk add git
 # Import from builder.
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
 WORKDIR /appuser
-RUN mkdir backup
 
 # Copy our build
 COPY --from=builder /appuser/target/x86_64-unknown-linux-musl/release/fava-query ./
