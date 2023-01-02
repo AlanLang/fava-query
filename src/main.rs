@@ -10,7 +10,12 @@ use serde::{
     de::{self},
     Deserialize, Deserializer, Serialize,
 };
-use std::{collections::HashMap, fmt, net::SocketAddr, str::FromStr};
+use std::{collections::HashMap, env, fmt, net::SocketAddr, str::FromStr};
+
+// Use Jemalloc only for musl-64 bits platforms
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main]
 async fn main() {
@@ -45,7 +50,15 @@ async fn query(Query(params): Query<Params>) -> Result<SuccessResult, ErrorResul
 }
 
 async fn query_table(params: Params) -> Result<QueryResult, reqwest::Error> {
-    let url = format!("http://127.0.0.1:5000/%E6%88%91%E7%9A%84%E8%B4%A6%E6%9C%AC/api/query_result?query_string={}", params.query_string);
+    let url = match env::var("url") {
+        Ok(val) => val,
+        Err(_) => panic!("url not set"),
+    };
+
+    let url = format!(
+        "{}/api/query_result?query_string={}",
+        url, params.query_string
+    );
     let result = reqwest::get(url).await?.json::<QueryResult>().await?;
     Ok(result)
 }
