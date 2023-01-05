@@ -19,6 +19,10 @@ static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main]
 async fn main() {
+    let _ = match env::var("url") {
+        Ok(val) => val,
+        Err(_) => panic!("url not set"),
+    };
     let app = Router::new().route("/api/query_result", get(query));
     let addr = SocketAddr::from(([0, 0, 0, 0], 80));
     println!("listening on {}", addr);
@@ -50,16 +54,19 @@ async fn query(Query(params): Query<Params>) -> Result<SuccessResult, ErrorResul
 }
 
 async fn query_table(params: Params) -> Result<QueryResult, reqwest::Error> {
-    let url = match env::var("url") {
-        Ok(val) => val,
-        Err(_) => panic!("url not set"),
-    };
+    let url = env::var("url").unwrap_or_default();
 
-    let url = format!(
+    let query_url = format!(
         "{}/api/query_result?query_string={}",
         url, params.query_string
     );
-    let result = reqwest::get(url).await?.json::<QueryResult>().await?;
+    // 先请求页面以刷新数据
+    let _ = reqwest::get(format!("{}/income_statement/", url))
+        .await?
+        .text()
+        .await?;
+    let result = reqwest::get(query_url).await?.json::<QueryResult>().await?;
+
     Ok(result)
 }
 
