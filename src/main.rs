@@ -34,10 +34,13 @@ async fn main() {
         .unwrap();
 }
 
-async fn account(Path(account): Path<String>) -> Result<SuccessResult, ErrorResult> {
+async fn account(
+    Path(account): Path<String>,
+    Query(params): Query<AccountParams>,
+) -> Result<SuccessResult, ErrorResult> {
     let query_result = query_account(account).await;
     match query_result {
-        Ok(result) => return Ok(SuccessResult::new(get_account_data(result))),
+        Ok(result) => return Ok(SuccessResult::new(get_account_data(result, params))),
         Err(e) => Err(ErrorResult::new(e.to_string())),
     }
 }
@@ -115,7 +118,7 @@ fn get_table_data(table_str: String) -> Vec<HashMap<String, String>> {
     result
 }
 
-fn get_account_data(html: String) -> Vec<HashMap<String, String>> {
+fn get_account_data(html: String, params: AccountParams) -> Vec<HashMap<String, String>> {
     let document = Document::from(html.as_str());
     let table = document.select(".flex-table");
     let data_lines = table.select(".transaction");
@@ -126,21 +129,28 @@ fn get_account_data(html: String) -> Vec<HashMap<String, String>> {
         if result.iter().any(|item| item.get("date") == Some(&date)) {
             return;
         }
-        let changed = line
+        let mut changed: f32 = line
             .select(".change")
             .text()
             .replace("CNY", "")
             .trim()
-            .to_string();
-        let balance = line
+            .parse()
+            .unwrap();
+        let mut balance: f32 = line
             .select("span:nth-child(6)")
             .text()
             .replace("CNY", "")
             .trim()
-            .to_string();
+            .parse()
+            .unwrap();
+
+        if Some(true) == params.negate {
+            changed = 0.0 - changed;
+            balance = 0.0 - balance;
+        }
         result_item.insert("date".into(), date);
-        result_item.insert("changed".into(), changed);
-        result_item.insert("balance".into(), balance);
+        result_item.insert("changed".into(), changed.to_string());
+        result_item.insert("balance".into(), balance.to_string());
         result.push(result_item);
     });
     result.reverse();
@@ -157,6 +167,13 @@ struct Params {
     filter: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
     time: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct AccountParams {
+    #[serde(default, deserialize_with = "empty_string_as_none")]
+    negate: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
