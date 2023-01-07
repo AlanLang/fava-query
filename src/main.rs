@@ -1,5 +1,5 @@
 use axum::{
-    extract::Query,
+    extract::{Path, Query},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -23,13 +23,23 @@ async fn main() {
         Ok(val) => val,
         Err(_) => panic!("url not set"),
     };
-    let app = Router::new().route("/api/query_result", get(query));
+    let app = Router::new()
+        .route("/api/query_result", get(query))
+        .route("/api/account/:account", get(account));
     let addr = SocketAddr::from(([0, 0, 0, 0], 80));
     println!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn account(Path(account): Path<String>) -> Result<SuccessResult, ErrorResult> {
+    let query_result = query_account(account).await;
+    match query_result {
+        Ok(result) => return Ok(SuccessResult::new(get_account_data(result))),
+        Err(e) => Err(ErrorResult::new(e.to_string())),
+    }
 }
 
 async fn query(Query(params): Query<Params>) -> Result<SuccessResult, ErrorResult> {
@@ -70,6 +80,18 @@ async fn query_table(params: Params) -> Result<QueryResult, reqwest::Error> {
     Ok(result)
 }
 
+async fn query_account(account: String) -> Result<String, reqwest::Error> {
+    let url = env::var("url").unwrap_or_default();
+    let _ = reqwest::get(format!("{}/income_statement/", url))
+        .await?
+        .text()
+        .await?;
+    let url = format!("{}/account/{}", url, account);
+    // 先请求页面以刷新数据
+    let result = reqwest::get(url).await?.text().await?;
+    Ok(result)
+}
+
 fn get_table_data(table_str: String) -> Vec<HashMap<String, String>> {
     let document = Document::from(table_str.as_str());
     let table_title = document.select("thead").select("tr").select("th");
@@ -90,6 +112,38 @@ fn get_table_data(table_str: String) -> Vec<HashMap<String, String>> {
         }
         result.push(line);
     });
+    result
+}
+
+fn get_account_data(html: String) -> Vec<HashMap<String, String>> {
+    let document = Document::from(html.as_str());
+    let table = document.select(".flex-table");
+    let data_lines = table.select(".transaction");
+    let mut result: Vec<HashMap<String, String>> = Vec::new();
+    data_lines.iter().for_each(|line| {
+        let mut result_item: HashMap<String, String> = HashMap::new();
+        let date = line.select(".datecell").text().to_string();
+        if result.iter().any(|item| item.get("date") == Some(&date)) {
+            return;
+        }
+        let changed = line
+            .select(".change")
+            .text()
+            .replace("CNY", "")
+            .trim()
+            .to_string();
+        let balance = line
+            .select("span:nth-child(6)")
+            .text()
+            .replace("CNY", "")
+            .trim()
+            .to_string();
+        result_item.insert("date".into(), date);
+        result_item.insert("changed".into(), changed);
+        result_item.insert("balance".into(), balance);
+        result.push(result_item);
+    });
+    result.reverse();
     result
 }
 
