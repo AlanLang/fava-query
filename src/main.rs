@@ -135,14 +135,14 @@ fn get_account_data(html: String, params: AccountParams) -> Vec<HashMap<String, 
             .replace("CNY", "")
             .trim()
             .parse()
-            .unwrap();
+            .unwrap_or_default();
         let mut balance: f32 = line
             .select("span:nth-child(6)")
             .text()
             .replace("CNY", "")
             .trim()
             .parse()
-            .unwrap();
+            .unwrap_or_default();
 
         if Some(true) == params.negate {
             changed = 0.0 - changed;
