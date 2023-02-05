@@ -25,13 +25,22 @@ async fn main() {
     };
     let app = Router::new()
         .route("/api/query_result", get(query))
-        .route("/api/account/:account", get(account));
+        .route("/api/account/:account", get(account))
+        .route("/balance", get(balance));
     let addr = SocketAddr::from(([0, 0, 0, 0], 80));
     println!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn balance() -> String {
+    let query_result = query_balance().await;
+    match query_result {
+        Ok(result) => return result,
+        Err(e) => e.to_string(),
+    }
 }
 
 async fn account(
@@ -64,6 +73,25 @@ async fn query(Query(params): Query<Params>) -> Result<SuccessResult, ErrorResul
         }
         Err(e) => Err(ErrorResult::new(e.to_string())),
     }
+}
+
+async fn query_balance() -> Result<String, reqwest::Error> {
+    let mut balances: Vec<String> = vec![];
+    let url = env::var("url").unwrap_or_default();
+    let query_url = format!("{}/statistics/?interval=day", url);
+    let text = reqwest::get(query_url).await?.text().await?;
+    let document = Document::from(text.as_str());
+    let balance_item = document
+        .select(".statistics-update-activity")
+        .select("tbody")
+        .select("tr");
+    balance_item.iter().for_each(|node| {
+        let account = node.select(".account").text().trim().to_string();
+        let balance = node.select("td.num").text().trim().to_string();
+        balances.push(format!("date balance {} {}", account, balance));
+    });
+    balances.sort();
+    Ok(balances.join("\r\n"))
 }
 
 async fn query_table(params: Params) -> Result<QueryResult, reqwest::Error> {
